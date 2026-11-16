@@ -71,6 +71,7 @@ body{margin:0;background:linear-gradient(180deg,#eff8f1 0,#f8fbf8 260px,#f8fbf8 
 .status{white-space:nowrap;border-radius:20px;padding:6px 10px;font-size:11px;font-weight:500}
 .status.paid{background:#e4f5e9;color:#2e8050}
 .status.unpaid{background:var(--gold-soft);color:var(--gold-ink)}
+.status.absent{background:#fdeceb;color:#b34b42}
 .panel{background:#fff;border:1px solid var(--line);border-radius:20px;padding:21px;margin-top:8px;box-shadow:var(--shadow)}
 .panel-heading{margin-bottom:13px}
 .nav-tabs{display:flex;gap:5px;border-bottom:1px solid var(--line);overflow:auto}
@@ -153,7 +154,7 @@ tbody tr:hover{background:#fbfefb}
 
       <section id="appView" class="hidden">
         <div class="page-heading">
-          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันได้ตามสิทธิ์บัญชี (พร้อมระบบสะสมยอดค้าง, ดอกเบี้ยรายวันแยกตามวัน และค่าปรับระเบียบรายบุคคล)</p></div>
+          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันได้ตามสิทธิ์บัญชี (พร้อมระบบสะสมยอดค้าง, ดอกเบี้ยรายวันเว้นเสาร์-อาทิตย์และวันลา, และค่าปรับระเบียบ)</p></div>
           <div class="date-control"><label for="selectedDate">วันที่บันทึก</label><input id="selectedDate" type="date"></div>
         </div>
 
@@ -178,14 +179,19 @@ tbody tr:hover{background:#fbfefb}
         <div class="student-grid" id="studentGrid"></div>
 
         <section class="panel">
-          <div class="panel-heading"><div><h2>เมนูจัดการ</h2><p class="muted">ดูยอดค้าง (รวมดอกเบี้ยตามเรทแต่ละวัน และค่าปรับระเบียบ), บันทึกระเบียบ, ประวัติ และส่งออกข้อมูล</p></div></div>
+          <div class="panel-heading"><div><h2>เมนูจัดการ</h2><p class="muted">ดูยอดค้าง, เช็คชื่อคนลา/ไม่มาเรียน (เพื่อเว้นดอกเบี้ย), บันทึกระเบียบ, ประวัติ และส่งออกข้อมูล</p></div></div>
           <div class="nav-tabs">
             <button class="tab active" data-tab="arrears">ยอดค้างรายบุคคล (สุทธิ)</button>
+            <button class="tab" data-tab="absences">เช็คชื่อคนลา / ไม่มาเรียน</button>
             <button class="tab" data-tab="violations">บันทึกค่าปรับระเบียบ (รายวัน)</button>
             <button class="tab" data-tab="history">ประวัติรายวัน</button>
             <button class="tab" data-tab="export">ส่งออกข้อมูล</button>
           </div>
           <div id="arrearsPanel" class="tab-panel"><div id="arrearsContent" class="table-wrap"></div></div>
+          <div id="absencesPanel" class="tab-panel hidden">
+            <p class="muted">แตะที่รายชื่อนักเรียนที่ <strong>ลา หรือ ไม่มาโรงเรียนในวันที่เลือก</strong> (ระบบจะไม่คิดดอกเบี้ยค้างชำระของวันนี้ให้กับคนที่ไม่มาเรียน)</p>
+            <div class="student-grid" id="absenceGrid" style="margin-top:14px;margin-bottom:10px;"></div>
+          </div>
           <div id="violationsPanel" class="tab-panel hidden">
             <p class="muted">บันทึกความผิดระเบียบรายบุคคลสำหรับวันที่เลือก (เช่น ชุดผิดระเบียบ +10 บาท, เล็บยาว +5 บาท หรืออื่นๆ)</p>
             <div id="violationsContent" class="table-wrap"></div>
@@ -223,9 +229,10 @@ const db = firebase.firestore();
 
 const money = n => `${Number(n || 0).toLocaleString("th-TH", {maximumFractionDigits:2})} บาท`;
 const today = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const formatDateStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const roster = ["นายพาทิศ นิยม", "นายวิชยุตม์ เพียรธัญญะการ", "น.ส.ธนัสถา มณีฉาย", "น.ส.ธัญชนก แสงสุข", "น.ส.ปริยาภัทร เรืองอินทร์", "น.ส.ปุณยาพร ยวงรัมย์", "น.ส.พัชรีวรรณ ปรางทอง", "นายกิตติภณ เค้าเจริญ", "นายชุติเทพ เพ็ชรประดับ", "นายปฐวี ปานอุทัย", "น.ส.ศรันยรัตน์ สร้อยสนธิ์", "น.ส.อนัญพร ชาติไกรบัญชา", "นายชยณัฐ ช่างเจรจา", "นายดัสกร แสนหลวง", "นายนพดล วงษ์คํา", "นายพัชรวัฒน์ กัณหา", "นายแทนธนพัทธ์ ดีขุนทด", "นายธนกร มีมาก", "น.ส.มิญชญา วรรณทอง", "นายกลวัชร อุ่นเมือง", "นายธนกร ไกรรักษ์", "น.ส.ณัชชา หมอนอิง", "น.ส.ปาณิศา แปนใจ", "นายเทวินทร์ ปานดำ", "นายพระนาย รักษา", "นายภูวณัฎฐ์ ฮุมโฮม", "นายศิรวิทย์ มีมาเจริญดี", "นายศิวพัชร์ บัวเถื่อน", "นายอิสเรศ พรหมอินทร์", "นายเอกศิษฏ์ สวัสดิพันธ์", "น.ส.จิราธิป ขวัญพงษ์", "น.ส.ชนัญชิตา ปานดำ", "น.ส.ภัทรณิชานันท์ พุ่มยิ้ม", "นายเชิดศักดิ์ อภิชาติ", "น.ส.นันท์นภัส สุสดี", "น.ส.รติมา กล้ากสิกิจ", "น.ส.อาภัสรา ศรีเดช", "น.ส.อาภาภัทร พูลเพิ่ม", "น.ส.ปิ่นมณี ดีเคน"];
 let students=roster.map((full_name,i)=>({student_no:i+1,full_name}));
-let days=[], payments=[], violations=[], selectedDate=today(), busy=new Set(), toastTimer, currentUser=null, currentRole=null;
+let days=[], payments=[], violations=[], absences=[], selectedDate=today(), toastTimer, currentUser=null, currentRole=null;
 
 function toast(message,error=false){const el=$("toast");el.textContent=message;el.className=`toast show${error?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3200)}
 function setConnection(message,state="online"){$("connection").innerHTML=`<i></i>${message}`;$("connection").className=`connection ${state}`}
@@ -235,23 +242,30 @@ function currentDay(){return days.find(d=>d.collection_date===selectedDate)}
 function rateForDay(){return Number(currentDay()?.amount_per_student||0)}
 function fineRateForDay(){return currentDay()?.fine_rate !== undefined ? Number(currentDay().fine_rate) : 5;}
 function paidSet(){return new Set(payments.filter(p=>p.collection_date===selectedDate&&p.is_paid).map(p=>Number(p.student_no)))}
+function absentSetForDate(dateStr){return new Set(absences.filter(a=>a.collection_date===dateStr&&a.is_absent).map(a=>Number(a.student_no)))}
 
-function getDaysOverdue(collectionDateStr) {
+// คำนวณจำนวนวันที่ค้างชำระ (เว้นเสาร์-อาทิตย์ และเว้นวันที่นักเรียนคนนั้นลา/ไม่มาเรียน)
+function getDaysOverdue(collectionDateStr, studentNo) {
   const todayStr = today();
   let current = new Date(collectionDateStr + "T00:00:00");
   const target = new Date(todayStr + "T00:00:00");
   
-  let weekdayCount = 0;
-  current.setDate(current.getDate() + 1);
-  while (current <= target) {
+  let billableDays = 0;
+  current.setDate(current.getDate() + 1); // เริ่มนับวันถัดไป
+  
+  while (current < target) { // รอให้พ้นวันนั้นไปก่อนถึงจะเริ่มบวกดอกเบี้ย
     const dayOfWeek = current.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      weekdayCount++;
+    const checkDateStr = formatDateStr(current);
+    const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+    const isAbsent = absences.some(a => a.collection_date === checkDateStr && Number(a.student_no) === Number(studentNo) && a.is_absent);
+    
+    if (!isWeekend && !isAbsent) {
+      billableDays++;
     }
     current.setDate(current.getDate() + 1);
   }
   
-  return Math.max(0, weekdayCount);
+  return Math.max(0, billableDays);
 }
 
 function calcAllTimeCollected() {
@@ -269,14 +283,16 @@ function calcAllTimeCollected() {
 
 async function loadCloudData(){
   setConnection("กำลังโหลดข้อมูล…","offline");
-  const [daySnap,paySnap,violSnap]=await Promise.all([
+  const [daySnap,paySnap,violSnap,absSnap]=await Promise.all([
     db.collection("days").get(),
     db.collection("payments").get(),
-    db.collection("violations").get()
+    db.collection("violations").get(),
+    db.collection("absences").get()
   ]);
   days=daySnap.docs.map(d=>d.data());
   payments=paySnap.docs.map(d=>d.data());
   violations=violSnap.docs.map(d=>d.data());
+  absences=absSnap.docs.map(d=>d.data());
 
   renderAll();
   setConnection("ออนไลน์ • ข้อมูลจาก Cloud Firestore","online");
@@ -287,7 +303,7 @@ function renderDashboard(){
   $("allTimeCollectedAmount").textContent = money(allTime.totalAllDays);
   $("allTimeCaption").textContent = `สะสมจาก ${allTime.totalDays} วันที่มีการเก็บ (${allTime.paidCountAll} รายการ)`;
 
-  const paid=paidSet(),rate=rateForDay(),fineRate=fineRateForDay(),total=students.length*rate,collected=paid.size*rate,missing=total-collected;
+  const paid=paidSet(),absentToday=absentSetForDate(selectedDate),rate=rateForDay(),fineRate=fineRateForDay(),total=students.length*rate,collected=paid.size*rate,missing=total-collected;
   $("collectedAmount").textContent=money(collected);
   $("missingAmount").textContent=money(missing);
   $("expectedAmount").textContent=money(total);
@@ -306,7 +322,25 @@ function renderDashboard(){
 
   $("studentGrid").innerHTML=students.map(s=>{
     const isPaid=paid.has(s.student_no);
-    return `<button class="student-row" data-student="${s.student_no}" ${canEdit()?"":"disabled"}><span class="student-name"><span class="student-no">${String(s.student_no).padStart(2,"0")}</span><span class="student-fullname">${escapeHtml(s.full_name)}</span></span><span class="status ${isPaid?"paid":"unpaid"}">${isPaid?"✓ จ่ายแล้ว":"ยังไม่จ่าย"}</span></button>`
+    const isAbsent=absentToday.has(s.student_no);
+    const badge = isPaid 
+      ? `<span class="status paid">✓ จ่ายแล้ว</span>` 
+      : (isAbsent ? `<span class="status absent">ลา / ไม่มาเรียน</span>` : `<span class="status unpaid">ยังไม่จ่าย</span>`);
+    return `<button class="student-row" data-student="${s.student_no}" ${canEdit()?"":"disabled"}><span class="student-name"><span class="student-no">${String(s.student_no).padStart(2,"0")}</span><span class="student-fullname">${escapeHtml(s.full_name)}</span></span>${badge}</button>`
+  }).join("");
+}
+
+function renderAbsencesGrid(){
+  const absentToday = absentSetForDate(selectedDate);
+  $("absenceGrid").innerHTML = students.map(s => {
+    const isAbsent = absentToday.has(s.student_no);
+    return `<button class="student-row" data-absent-student="${s.student_no}" ${canEdit()?"":"disabled"} style="${isAbsent ? 'border-color:#e5a9a4;background:#fff8f8;' : ''}">
+      <span class="student-name">
+        <span class="student-no">${String(s.student_no).padStart(2,"0")}</span>
+        <span class="student-fullname">${escapeHtml(s.full_name)}</span>
+      </span>
+      <span class="status ${isAbsent ? 'absent' : 'paid'}">${isAbsent ? '✕ ไม่มาเรียน (เว้นดอก)' : '✓ มาโรงเรียน'}</span>
+    </button>`;
   }).join("");
 }
 
@@ -349,7 +383,7 @@ function renderArrears(){
     list.forEach(d => {
       const base = Number(d.amount_per_student);
       const dayFineRate = d.fine_rate !== undefined ? Number(d.fine_rate) : 5;
-      const overdueDays = getDaysOverdue(d.collection_date);
+      const overdueDays = getDaysOverdue(d.collection_date, s.student_no);
       const interest = overdueDays * dayFineRate;
       baseTotal += base;
       interestTotal += interest;
@@ -394,7 +428,7 @@ function renderArrears(){
           <th>ดอกเบี้ยค้าง</th>
           <th>ค่าปรับระเบียบ</th>
           <th>รวมยอดสุทธิ</th>
-          <th>รายละเอียด (สะสมไม่หมดอายุ)</th>
+          <th>รายละเอียด (เว้นเสาร์-อาทิตย์และวันลา)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -410,7 +444,7 @@ function renderHistory(){
   }).join("")}</tbody></table>`:`<div class="empty">ยังไม่มีประวัติการเก็บเงิน</div>`;
 }
 
-function renderAll(){renderDashboard();renderArrears();renderViolationsTable();renderHistory()}
+function renderAll(){renderDashboard();renderAbsencesGrid();renderArrears();renderViolationsTable();renderHistory()}
 
 async function saveRate(){
   if(!canEdit())return toast("บัญชีนี้ไม่มีสิทธิ์แก้ไขข้อมูล",true);
@@ -465,6 +499,21 @@ async function togglePayment(no){
   }catch(e){console.error(e);toast("บันทึกไม่สำเร็จ ตรวจสอบสิทธิ์ Firestore",true)}
 }
 
+async function toggleAbsence(no){
+  if(!canEdit())return toast("บัญชีนี้ดูข้อมูลได้อย่างเดียว",true);
+  const old=absences.find(a=>a.collection_date===selectedDate&&Number(a.student_no)===no);
+  const nextAbsent=!(old&&old.is_absent);
+  const id=`${selectedDate}_${no}`;
+  const row={collection_date:selectedDate,student_no:no,is_absent:nextAbsent,updated_at:firebase.firestore.FieldValue.serverTimestamp(),updated_by:currentUser.uid};
+  try{
+    await db.collection("absences").doc(id).set(row,{merge:true});
+    const i=absences.findIndex(a=>a.collection_date===selectedDate&&Number(a.student_no)===no);
+    const localRow={collection_date:selectedDate,student_no:no,is_absent:nextAbsent};
+    if(i>=0)absences[i]=localRow;else absences.push(localRow);
+    renderAll();toast(nextAbsent?"บันทึกว่าลา/ไม่มาเรียน (เว้นดอกเบี้ยวันนี้)":"เปลี่ยนเป็นมาโรงเรียนปกติ");
+  }catch(e){console.error(e);toast("บันทึกไม่สำเร็จ ตรวจสอบสิทธิ์ Firestore (คอลเลกชัน absences)",true)}
+}
+
 async function updateViolation(no, field, val){
   if(!canEdit())return;
   const id = `${selectedDate}_${no}`;
@@ -493,7 +542,7 @@ function exportCsv(){
     list.forEach(d => {
       baseTotal += Number(d.amount_per_student);
       const dayFineRate = d.fine_rate !== undefined ? Number(d.fine_rate) : 5;
-      interestTotal += getDaysOverdue(d.collection_date) * dayFineRate;
+      interestTotal += getDaysOverdue(d.collection_date, s.student_no) * dayFineRate;
     });
     const studentViolations = violations.filter(v => Number(v.student_no) === s.student_no);
     let violTotal = 0;
@@ -510,10 +559,11 @@ function exportCsv(){
 
 function bindEvents(){
   $("selectedDate").value=selectedDate;
-  $("selectedDate").addEventListener("change",e=>{selectedDate=e.target.value;renderDashboard();renderViolationsTable();});
+  $("selectedDate").addEventListener("change",e=>{selectedDate=e.target.value;renderDashboard();renderAbsencesGrid();renderViolationsTable();});
   $("saveRateBtn").addEventListener("click",saveRate);
   $("saveFineRateBtn").addEventListener("click",saveFineRate);
   $("studentGrid").addEventListener("click",e=>{const b=e.target.closest("[data-student]");if(b&&!b.disabled)togglePayment(Number(b.dataset.student))});
+  $("absenceGrid").addEventListener("click",e=>{const b=e.target.closest("[data-absent-student]");if(b&&!b.disabled)toggleAbsence(Number(b.dataset.absentStudent))});
   $("violationsContent").addEventListener("input",e=>{
     if(e.target.classList.contains("viol-input")){
       updateViolation(Number(e.target.dataset.student), e.target.dataset.field, e.target.value);
@@ -522,11 +572,11 @@ function bindEvents(){
   $("exportBtn").addEventListener("click",exportCsv);
   document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>{
     document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===btn));
-    ["arrears","violations","history","export"].forEach(k=>$(k+"Panel").classList.toggle("hidden",k!==btn.dataset.tab));
+    ["arrears","absences","violations","history","export"].forEach(k=>$(k+"Panel").classList.toggle("hidden",k!==btn.dataset.tab));
   }));
   $("historyContent").addEventListener("click",e=>{
     const b=e.target.closest("[data-history-date]");
-    if(b){selectedDate=b.dataset.historyDate;$("selectedDate").value=selectedDate;renderDashboard();renderViolationsTable();window.scrollTo({top:0,behavior:"smooth"})}
+    if(b){selectedDate=b.dataset.historyDate;$("selectedDate").value=selectedDate;renderDashboard();renderAbsencesGrid();renderViolationsTable();window.scrollTo({top:0,behavior:"smooth"})}
   });
   $("loginForm").addEventListener("submit",async e=>{
     e.preventDefault();$("loginError").textContent="";
