@@ -154,7 +154,7 @@ tbody tr:hover{background:#fbfefb}
 
       <section id="appView" class="hidden">
         <div class="page-heading">
-          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันตามสิทธิ์บัญชี (คำนวณดอกเบี้ยรายวันตามปฏิทินปกติ พร้อมระบบยกเว้นวันลา และค่าปรับระเบียบ)</p></div>
+          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันตามสิทธิ์บัญชี (คำนวณดอกเบี้ยรายวันตามปฏิทิน พร้อมระบบเว้นวันลา และค่าปรับระเบียบ)</p></div>
           <div class="date-control"><label for="selectedDate">วันที่บันทึก</label><input id="selectedDate" type="date"></div>
         </div>
 
@@ -240,24 +240,24 @@ function canEdit(){return currentRole==="admin"||currentRole==="treasurer"}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function currentDay(){return days.find(d=>d.collection_date===selectedDate)}
 function rateForDay(){return Number(currentDay()?.amount_per_student||0)}
-function fineRateForDay(){return currentDay()?.fine_rate !== undefined ? Number(currentDay().fine_rate) : 5;}
+function fineRateForDay(){return currentDay()?.fine_rate !== undefined && currentDay().fine_rate !== "" ? Number(currentDay().fine_rate) : 5;}
 function paidSet(){return new Set(payments.filter(p=>p.collection_date===selectedDate&&p.is_paid).map(p=>Number(p.student_no)))}
 function absentSetForDate(dateStr){return new Set(absences.filter(a=>a.collection_date===dateStr&&a.is_absent).map(a=>Number(a.student_no)))}
 
-// คำนวณจำนวนวันที่ค้างชำระ (นับทุกวันตามแบบเดิม แต่เว้นวันที่นักเรียนลา/ไม่มาโรงเรียน)
+// คำนวณจำนวนวันที่ค้างชำระ (นับทุกวันตามปฏิทินปกติ พร้อมเช็ควันลา)
 function getDaysOverdue(collectionDateStr, studentNo) {
   const todayStr = today();
   let current = new Date(collectionDateStr + "T00:00:00");
   const target = new Date(todayStr + "T00:00:00");
   
   let billableDays = 0;
-  current.setDate(current.getDate() + 1); // เริ่มนับวันถัดไป
+  current.setDate(current.getDate() + 1); // เริ่มนับวันถัดไปหลังจากวันที่เก็บเงิน
   
-  while (current < target) {
+  while (current <= target) {
     const checkDateStr = formatDateStr(current);
     const isAbsent = absences.some(a => a.collection_date === checkDateStr && Number(a.student_no) === Number(studentNo) && a.is_absent);
     
-    // นับทุกวันตามปกติ แต่ถ้าวันไหนลา จะไม่บวกดอกเบี้ยเพิ่ม
+    // ถ้าวันนั้นมาโรงเรียนปกติ (ไม่ได้ลา) ให้นับเป็น 1 วันดอกเบี้ย
     if (!isAbsent) {
       billableDays++;
     }
@@ -381,7 +381,7 @@ function renderArrears(){
 
     list.forEach(d => {
       const base = Number(d.amount_per_student);
-      const dayFineRate = d.fine_rate !== undefined ? Number(d.fine_rate) : 5;
+      const dayFineRate = d.fine_rate !== undefined && d.fine_rate !== "" ? Number(d.fine_rate) : 5;
       const overdueDays = getDaysOverdue(d.collection_date, s.student_no);
       const interest = overdueDays * dayFineRate;
       baseTotal += base;
@@ -438,7 +438,7 @@ function renderArrears(){
 function renderHistory(){
   const sorted=[...days].sort((a,b)=>b.collection_date.localeCompare(a.collection_date));
   $("historyContent").innerHTML=sorted.length?`<table><thead><tr><th>วันที่</th><th>อัตรา/คน</th><th>ค่าปรับ/วัน</th><th>จ่ายแล้ว</th><th>ยังไม่จ่าย</th><th>เก็บได้</th><th>ยังขาด</th></tr></thead><tbody>${sorted.map(d=>{
-    const paid=payments.filter(p=>p.collection_date===d.collection_date&&p.is_paid).length,rate=Number(d.amount_per_student||0),dayFine=d.fine_rate!==undefined?Number(d.fine_rate):5,collected=paid*rate,missing=(students.length-paid)*rate;
+    const paid=payments.filter(p=>p.collection_date===d.collection_date&&p.is_paid).length,rate=Number(d.amount_per_student||0),dayFine=d.fine_rate!==undefined&&d.fine_rate!==""?Number(d.fine_rate):5,collected=paid*rate,missing=(students.length-paid)*rate;
     return `<tr><td><button class="text-link" data-history-date="${d.collection_date}">${new Date(d.collection_date+"T00:00:00").toLocaleDateString("th-TH")}</button></td><td>${money(rate)}</td><td>${dayFine} บาท</td><td>${paid}</td><td>${students.length-paid}</td><td>${money(collected)}</td><td>${money(missing)}</td></tr>`
   }).join("")}</tbody></table>`:`<div class="empty">ยังไม่มีประวัติการเก็บเงิน</div>`;
 }
@@ -540,7 +540,7 @@ function exportCsv(){
     let baseTotal = 0, interestTotal = 0;
     list.forEach(d => {
       baseTotal += Number(d.amount_per_student);
-      const dayFineRate = d.fine_rate !== undefined ? Number(d.fine_rate) : 5;
+      const dayFineRate = d.fine_rate !== undefined && d.fine_rate !== "" ? Number(d.fine_rate) : 5;
       interestTotal += getDaysOverdue(d.collection_date, s.student_no) * dayFineRate;
     });
     const studentViolations = violations.filter(v => Number(v.student_no) === s.student_no);
