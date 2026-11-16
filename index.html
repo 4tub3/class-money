@@ -154,7 +154,7 @@ tbody tr:hover{background:#fbfefb}
 
       <section id="appView" class="hidden">
         <div class="page-heading">
-          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันได้ตามสิทธิ์บัญชี (พร้อมระบบสะสมยอดค้าง, ดอกเบี้ยรายวันเว้นเสาร์-อาทิตย์และวันลา, และค่าปรับระเบียบ)</p></div>
+          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันตามสิทธิ์บัญชี (คำนวณดอกเบี้ยรายวันตามปฏิทินปกติ พร้อมระบบยกเว้นวันลา และค่าปรับระเบียบ)</p></div>
           <div class="date-control"><label for="selectedDate">วันที่บันทึก</label><input id="selectedDate" type="date"></div>
         </div>
 
@@ -189,7 +189,7 @@ tbody tr:hover{background:#fbfefb}
           </div>
           <div id="arrearsPanel" class="tab-panel"><div id="arrearsContent" class="table-wrap"></div></div>
           <div id="absencesPanel" class="tab-panel hidden">
-            <p class="muted">แตะที่รายชื่อนักเรียนที่ <strong>ลา หรือ ไม่มาโรงเรียนในวันที่เลือก</strong> (ระบบจะไม่คิดดอกเบี้ยค้างชำระของวันนี้ให้กับคนที่ไม่มาเรียน)</p>
+            <p class="muted">แตะที่รายชื่อนักเรียนที่ <strong>ลา หรือ ไม่มาโรงเรียนในวันที่เลือก</strong> (ระบบจะเว้นดอกเบี้ยของวันนี้ให้กับคนที่ไม่มา)</p>
             <div class="student-grid" id="absenceGrid" style="margin-top:14px;margin-bottom:10px;"></div>
           </div>
           <div id="violationsPanel" class="tab-panel hidden">
@@ -244,7 +244,7 @@ function fineRateForDay(){return currentDay()?.fine_rate !== undefined ? Number(
 function paidSet(){return new Set(payments.filter(p=>p.collection_date===selectedDate&&p.is_paid).map(p=>Number(p.student_no)))}
 function absentSetForDate(dateStr){return new Set(absences.filter(a=>a.collection_date===dateStr&&a.is_absent).map(a=>Number(a.student_no)))}
 
-// คำนวณจำนวนวันที่ค้างชำระ (เว้นเสาร์-อาทิตย์ และเว้นวันที่นักเรียนคนนั้นลา/ไม่มาเรียน)
+// คำนวณจำนวนวันที่ค้างชำระ (นับทุกวันตามแบบเดิม แต่เว้นวันที่นักเรียนลา/ไม่มาโรงเรียน)
 function getDaysOverdue(collectionDateStr, studentNo) {
   const todayStr = today();
   let current = new Date(collectionDateStr + "T00:00:00");
@@ -253,13 +253,12 @@ function getDaysOverdue(collectionDateStr, studentNo) {
   let billableDays = 0;
   current.setDate(current.getDate() + 1); // เริ่มนับวันถัดไป
   
-  while (current < target) { // รอให้พ้นวันนั้นไปก่อนถึงจะเริ่มบวกดอกเบี้ย
-    const dayOfWeek = current.getDay();
+  while (current < target) {
     const checkDateStr = formatDateStr(current);
-    const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
     const isAbsent = absences.some(a => a.collection_date === checkDateStr && Number(a.student_no) === Number(studentNo) && a.is_absent);
     
-    if (!isWeekend && !isAbsent) {
+    // นับทุกวันตามปกติ แต่ถ้าวันไหนลา จะไม่บวกดอกเบี้ยเพิ่ม
+    if (!isAbsent) {
       billableDays++;
     }
     current.setDate(current.getDate() + 1);
@@ -339,7 +338,7 @@ function renderAbsencesGrid(){
         <span class="student-no">${String(s.student_no).padStart(2,"0")}</span>
         <span class="student-fullname">${escapeHtml(s.full_name)}</span>
       </span>
-      <span class="status ${isAbsent ? 'absent' : 'paid'}">${isAbsent ? '✕ ไม่มาเรียน (เว้นดอก)' : '✓ มาโรงเรียน'}</span>
+      <span class="status ${isAbsent ? 'absent' : 'paid'}">${isAbsent ? '✕ ไม่มาโรงเรียน (เว้นดอก)' : '✓ มาโรงเรียน'}</span>
     </button>`;
   }).join("");
 }
@@ -428,7 +427,7 @@ function renderArrears(){
           <th>ดอกเบี้ยค้าง</th>
           <th>ค่าปรับระเบียบ</th>
           <th>รวมยอดสุทธิ</th>
-          <th>รายละเอียด (เว้นเสาร์-อาทิตย์และวันลา)</th>
+          <th>รายละเอียด (นับทุกวัน ยกเว้นวันลา)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -511,7 +510,7 @@ async function toggleAbsence(no){
     const localRow={collection_date:selectedDate,student_no:no,is_absent:nextAbsent};
     if(i>=0)absences[i]=localRow;else absences.push(localRow);
     renderAll();toast(nextAbsent?"บันทึกว่าลา/ไม่มาเรียน (เว้นดอกเบี้ยวันนี้)":"เปลี่ยนเป็นมาโรงเรียนปกติ");
-  }catch(e){console.error(e);toast("บันทึกไม่สำเร็จ ตรวจสอบสิทธิ์ Firestore (คอลเลกชัน absences)",true)}
+  }catch(e){console.error(e);toast("บันทึกไม่สำเร็จ ตรวจสอบสิทธิ์ Firestore",true)}
 }
 
 async function updateViolation(no, field, val){
