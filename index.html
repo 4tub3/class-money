@@ -154,7 +154,7 @@ tbody tr:hover{background:#fbfefb}
 
       <section id="appView" class="hidden">
         <div class="page-heading">
-          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันตามสิทธิ์บัญชี (รองรับการตั้งค่าเป็น 0 บาท, เว้นวันลา และคำนวณดอกเบี้ย)</p></div>
+          <div><p class="eyebrow">CLASSROOM COLLECTION</p><h1>จัดการเงินห้องเรียน</h1><p class="muted">บันทึกออนไลน์และดูข้อมูลร่วมกันตามสิทธิ์บัญชี (นับดอกเบี้ยเฉพาะวันจันทร์-ศุกร์ เว้นวันเสาร์-อาทิตย์และวันลา พร้อมตั้งค่าเป็น 0 ได้)</p></div>
           <div class="date-control"><label for="selectedDate">วันที่บันทึก</label><input id="selectedDate" type="date"></div>
         </div>
 
@@ -244,22 +244,28 @@ function fineRateForDay(){return currentDay()?.fine_rate !== undefined && curren
 function paidSet(){return new Set(payments.filter(p=>p.collection_date===selectedDate&&p.is_paid).map(p=>Number(p.student_no)))}
 function absentSetForDate(dateStr){return new Set(absences.filter(a=>a.collection_date===dateStr&&a.is_absent).map(a=>Number(a.student_no)))}
 
+// คำนวณจำนวนวันที่ค้างชำระ (นับเฉพาะวันจันทร์-ศุกร์ เว้นเสาร์-อาทิตย์ และเว้นวันที่นักเรียนลา)
 function getDaysOverdue(collectionDateStr, studentNo) {
   const todayStr = today();
   let current = new Date(collectionDateStr + "T00:00:00");
   const target = new Date(todayStr + "T00:00:00");
   
   let billableDays = 0;
-  current.setDate(current.getDate() + 1);
+  current.setDate(current.getDate() + 1); // เริ่มนับวันถัดไป
   
   while (current <= target) {
+    const dayOfWeek = current.getDay(); // 0=อาทิตย์, 6=เสาร์
     const checkDateStr = formatDateStr(current);
+    const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
     const isAbsent = absences.some(a => a.collection_date === checkDateStr && Number(a.student_no) === Number(studentNo) && a.is_absent);
-    if (!isAbsent) {
+    
+    // นับเฉพาะวันจันทร์-ศุกร์ และไม่ใช่วันที่ลา
+    if (!isWeekend && !isAbsent) {
       billableDays++;
     }
     current.setDate(current.getDate() + 1);
   }
+  
   return Math.max(0, billableDays);
 }
 
@@ -423,7 +429,7 @@ function renderArrears(){
           <th>ดอกเบี้ยค้าง</th>
           <th>ค่าปรับระเบียบ</th>
           <th>รวมยอดสุทธิ</th>
-          <th>รายละเอียด</th>
+          <th>รายละเอียด (เว้นเสาร์-อาทิตย์และวันลา)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
